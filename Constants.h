@@ -12,6 +12,7 @@
 #define PWM_ROW 45
 
 #define CHOPPER_SLOTS 72
+#define RPM_SCALE_FACTOR 1 / (CHOPPER_SLOTS / 60)
 
 #define RPM_LABEL "RPM:"
 #define PWM_LABEL "PWM Duty:"
