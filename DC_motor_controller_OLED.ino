@@ -83,7 +83,7 @@ ISR(TIMER0_COMPA_vect)
   if (count++ >= 100)
   {
     //rpm = uint16_t(float(TCNT1) * 0.01);
-    rpm = uint16_t(float(TCNT1) * 0.83);
+    rpm = uint16_t(float(TCNT1) * RPM_SCALE_FACTOR);
     TCNT1 = 0;
     count = 0;
   }
