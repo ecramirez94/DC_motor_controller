@@ -1,13 +1,14 @@
 #include <Wire.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
+#include "Adafruit_GFX.h"
+#include "Adafruit_SSD1306.h"
 #include "Constants.h"
 #include "Counter.h"
 #include "Pins.h"
 #include "PWM.h"
 #include "Timer.h"
 
-uint8_t state = STOPPED;
+volatile uint8_t state = STOPPED;
+volatile bool remote = false;
 bool update_OLED = true;
 volatile uint16_t rpm = 0;
 volatile uint8_t count = 0;
@@ -23,15 +24,25 @@ void setup()
   pinMode(PWM_PIN, INPUT);
   pinMode(COUNTER_PIN, INPUT_PULLUP);
   pinMode(PWM_OUTPUT, OUTPUT);
-  pinMode(START_STOP_BUTTON, INPUT_PULLUP);
+  pinMode(START_STOP_BUTTON_PIN, INPUT_PULLUP);
+  pinMode(WINDOW_TRIGGER_PIN, INPUT_PULLUP);
+  pinMode(TRIGGER_OUT_PIN, OUTPUT);
+  pinMode(REMOTE_CONTROL_PIN, INPUT_PULLUP);
+  digitalWrite(TRIGGER_OUT_PIN, HIGH);
 
   /* 
    *  Setup Interrupt Requests
    *  Start/Stop button on INT0 (Pin 2)
    *  Window Trigger Signal on INT1 (Pin 3)
    */
-  EICRA = (1<<ISC01) | (0<<ISC00); // Falling edge of INT0 generates the interrupts
-  EIMSK = (1<<INT0);  // Enable external interrupt request 0.
+  EICRA = (0<<ISC11) | (1<<ISC10) | (1<<ISC01) | (0<<ISC00); /* Logical change on INT1, Falling edge of INT0 */
+  EIMSK = (1<<INT1) | (1<<INT0);  /* Enable external interrupt requests 0 and 1. */
+
+  /*
+   * Pin change interrupts
+   */
+  PCICR = (1<<PCIE2); // Enable Pin Change Interrupts on pin bank: PCINT[23:16]
+  PCMSK2 = (1<<PCINT23); // Enable Pin Change Interrupt on Arduino pin 7 (REMOTE_CONTROL_PIN)
 
   Timer.startTimer();
   Counter.startCounting();
@@ -52,7 +63,12 @@ void loop()
       if (update_OLED)
       {
         PWM.setPWM(0); /* Stop PWM */
-        updateRPM(F("Stop"));
+        
+        if (remote)
+          updateRPM(F("Remote Stop"));
+        else
+          updateRPM(F("Stop"));
+          
         update_OLED = false;
       }
     break;
@@ -72,9 +88,23 @@ ISR(INT0_vect)
   if (state == RUNNING)
     state = STOPPED;
   else
+  {
     state = RUNNING;
+    remote = false;
+  }
 
   update_OLED = true;
+}
+
+ISR(INT1_vect)
+{
+  /* 
+   *  Each time the WINDOW_TRIGGER_PIN is toggled
+   *  by the chopper wheel, generate a pulse on 
+   *  the TRIGGER_OUT_PIN.
+   */
+  bitClear(PORTD, PD4);
+  bitSet(PORTD, PD4);
 }
 
 ISR(TIMER0_COMPA_vect)
@@ -82,11 +112,24 @@ ISR(TIMER0_COMPA_vect)
   /* Collect pulses for 1 second */
   if (count++ >= 100)
   {
-    //rpm = uint16_t(float(TCNT1) * 0.01);
     rpm = uint16_t(float(TCNT1) * RPM_SCALE_FACTOR);
     TCNT1 = 0;
     count = 0;
   }
+}
+
+ISR(PCINT2_vect)
+{
+  bool remote_control = digitalRead(REMOTE_CONTROL_PIN);
+
+  if (remote_control) /* If the MODE_SELECT pin was released (and pulled HIGH via internal pull-up resistor) */
+  {
+    state = STOPPED;
+    remote = true;
+  } else
+    state = RUNNING;
+
+  update_OLED = true;
 }
 /* End Interrupt Service Routines */
 
@@ -145,7 +188,7 @@ void updateRPM(uint16_t rpm)
    * - start_x_coor and start_y_coor defines top left corner of rectangle
    * - Each number is 5 pixels wide plus 1 pixel between numbers -> 5 numbers * 6 pixels = 30 pixels wide
    */
-  oled.fillRect(len + 10, RPM_ROW, 30, 8, BLACK); 
+  oled.fillRect(len + 10, RPM_ROW, 70, 8, BLACK); 
   oled.setCursor(len + 10, RPM_ROW); /*10 is space between colon and RPM value*/
   oled.println(rpm);
   oled.display();
@@ -163,7 +206,7 @@ void updateRPM(String notice)
    * - start_x_coor and start_y_coor defines top left corner of rectangle
    * - Each number is 5 pixels wide plus 1 pixel between numbers -> 5 numbers * 6 pixels = 30 pixels wide
    */
-  oled.fillRect(len + 10, RPM_ROW, 30, 8, BLACK); 
+  oled.fillRect(len + 10, RPM_ROW, 70, 8, BLACK); 
   oled.setCursor(len + 10, RPM_ROW); /*10 is space between colon and RPM value*/
   oled.println(notice);
   oled.display();
