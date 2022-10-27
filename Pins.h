@@ -7,9 +7,11 @@
 #ifndef PINS_H
 #define PINS_H
 
-#define START_STOP_BUTTON 2
-#define WINDOW_TRIGGER 3
+#define START_STOP_BUTTON_PIN 2
+#define WINDOW_TRIGGER_PIN 3
+#define TRIGGER_OUT_PIN 4
 #define COUNTER_PIN 5
+#define REMOTE_CONTROL_PIN 7
 #define PWM_PIN A0
 #define PWM_OUTPUT 11
 
